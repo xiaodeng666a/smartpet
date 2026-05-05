@@ -1,0 +1,18 @@
+# Core desktop UI
+PySide6>=6.7
+
+# LLM / agent stack
+langchain>=0.3
+langchain-openai>=0.3
+langgraph>=0.2
+typing_extensions>=4.12
+
+# Environment and HTTP
+python-dotenv>=1.0
+requests>=2.31
+
+# Optional but used by built-in tools
+pypdf>=4.0
+
+# Packaging
+pyinstaller>=6.0
