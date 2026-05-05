@@ -63,8 +63,15 @@ WATER_FRAME_INTERVAL_MS = 180
 WATER_FINAL_HOLD_MS = 1400
 SEDENTARY_REMINDER_INTERVAL_MS = 50 * 60 * 1000
 SEDENTARY_RETRY_MS = 5 * 60 * 1000
-SEDENTARY_FRAME_INTERVAL_MS = 170
-SEDENTARY_FINAL_HOLD_MS = 1600
+SEDENTARY_FRAME_INTERVAL_MS = 145
+SEDENTARY_FINAL_HOLD_MS = 1900
+SEDENTARY_HEART_PHASES = (
+    (0, 0, 0, 0, 0, 0),
+    (-2, -2, 10, 0, 0, 0),
+    (-8, -12, 14, 8, -22, 8),
+    (-12, -24, 16, 4, -36, 10),
+    (-16, -34, 18, 0, -48, 12),
+)
 IDLE_CHAT_INTERVAL_MIN_MS = 8 * 60 * 1000
 IDLE_CHAT_INTERVAL_MAX_MS = 15 * 60 * 1000
 MOVIE_FRAME_INTERVAL_MS = 210
@@ -106,9 +113,17 @@ MOVIE_FRAME_OFFSETS = {
     4: (5, 0),
     5: (5, 0),
 }
+SEDENTARY_FRAME_OFFSETS = {
+    0: (1, 0),
+    1: (0, 0),
+    2: (22, 0),
+    3: (10, 0),
+    4: (23, 0),
+}
+SEDENTARY_PLAY_SEQUENCE = [0, 1, 1, 2, 2, 3, 3, 3, 3, 4]
 
 TEXT_DARK = "#5a2b42"
-DEFAULT_SCALE_PERCENT = 60
+DEFAULT_SCALE_PERCENT = 40
 CHAT_TAIL_TIP_X = 11
 CHAT_TAIL_TIP_Y = 2
 CHAT_ANCHOR_BASE_X = 300
@@ -118,10 +133,24 @@ CHAT_VERTICAL_NUDGE_PX = 15
 VIDEO_TITLE_KEYWORDS = (
     "bilibili",
     "douyu",
+    "douyu.com",
+    "live.douyu.com",
+    "douyutv",
     "huya",
+    "huya.com",
+    "www.huya.com",
+    "huya live",
+    "斗鱼直播",
+    "虎牙直播",
+    "直播间",
+    "正在直播",
+    "主播",
     "douyin",
     "twitch",
     "live",
+    "livestream",
+    "live room",
+    "stream",
     "哔哩哔哩",
     "youtube",
     "netflix",
@@ -152,10 +181,26 @@ VIDEO_PROCESS_KEYWORDS = (
     "iqiyi",
     "bilibili",
     "douyu",
+    "douyutv",
     "huya",
+    "huya.com",
     "douyin",
+    "twitch",
+    "douyu",
+    "huya",
 )
 BROWSER_PROCESS_NAMES = ("chrome", "msedge", "firefox", "opera", "brave")
+BROWSER_LIVE_HINTS = (
+    "douyu",
+    "douyu.com",
+    "huya",
+    "huya.com",
+    "twitch",
+    "直播",
+    "直播间",
+    "虎牙直播",
+    "斗鱼直播",
+)
 IDLE_CHAT_LINES = (
     "阿尼亚在这里哦，哇库哇库。",
     "主人现在在忙什么呀？",
@@ -500,7 +545,7 @@ class PetWindow(QWidget):
         self.is_busy = False
         self.resize_anchor_mode = "bottom"
         self.scale_percent = DEFAULT_SCALE_PERCENT
-        self.chase_enabled = True
+        self.chase_enabled = False
         self.menu_open = False
         self.facing_right = False
         self.f5_was_down = False
@@ -710,9 +755,14 @@ class PetWindow(QWidget):
                 source_frame = self._prepare_sleep_final_frame(source_frame)
             frame_offsets: dict[int, tuple[int, int]] = {}
         elif self.sedentary_reminder_active and self.sedentary_frames:
-            frame_to_draw = min(self.sedentary_frame_index, len(self.sedentary_frames) - 1)
+            sequence_index = min(
+                self.sedentary_frame_index, len(SEDENTARY_PLAY_SEQUENCE) - 1
+            )
+            frame_to_draw = min(
+                SEDENTARY_PLAY_SEQUENCE[sequence_index], len(self.sedentary_frames) - 1
+            )
             source_frame = self._scaled_pixmap(self.sedentary_frames[frame_to_draw])
-            frame_offsets: dict[int, tuple[int, int]] = {}
+            frame_offsets: dict[int, tuple[int, int]] = SEDENTARY_FRAME_OFFSETS
         elif self.movie_action_active and self.movie_frames:
             frame_to_draw = min(self.movie_frame_index, len(self.movie_frames) - 1)
             source_frame = self._scaled_pixmap(self.movie_frames[frame_to_draw])
@@ -766,6 +816,14 @@ class PetWindow(QWidget):
                 draw_width,
                 self.facing_right,
             )
+        elif self.sedentary_reminder_active and frame_to_draw == 3:
+            self._draw_sedentary_heart_overlay(
+                painter,
+                draw_x,
+                dy,
+                draw_width,
+                min(self.sedentary_frame_index, len(SEDENTARY_PLAY_SEQUENCE) - 1),
+            )
 
         painter.end()
         self.pet_label.setPixmap(canvas)
@@ -787,7 +845,7 @@ class PetWindow(QWidget):
         if self.sedentary_reminder_active:
             if not self.sedentary_frames:
                 return
-            if self.sedentary_frame_index < len(self.sedentary_frames) - 1:
+            if self.sedentary_frame_index < len(SEDENTARY_PLAY_SEQUENCE) - 1:
                 self.sedentary_frame_index += 1
             elif not self.sedentary_ack_pending and not self.sedentary_pose_timer.isActive():
                 self.sedentary_pose_timer.start(SEDENTARY_FINAL_HOLD_MS)
@@ -1070,6 +1128,70 @@ class PetWindow(QWidget):
             painter.setPen(z_color)
             painter.drawText(text_x, draw_y + scaled_y + metrics.ascent(), "Z")
 
+    def _draw_sedentary_heart_overlay(
+        self,
+        painter: QPainter,
+        draw_x: int,
+        draw_y: int,
+        frame_width: int,
+        sequence_index: int,
+    ) -> None:
+        stretch_phase = min(
+            max(0, sequence_index - 5),
+            len(SEDENTARY_HEART_PHASES) - 1,
+        )
+        offset_x, offset_y, size, small_dx, small_dy, small_size = SEDENTARY_HEART_PHASES[stretch_phase]
+        if size <= 0 and small_size <= 0:
+            return
+
+        scale = self.scale_percent / 100.0
+        base_x = draw_x + round(94 * scale)
+        base_y = draw_y + round(122 * scale)
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        def draw_heart(cx: int, cy: int, heart_size: int, alpha: int) -> None:
+            if heart_size <= 0:
+                return
+            half_w = heart_size
+            half_h = max(4, int(heart_size * 0.9))
+            path = QPainterPath()
+            path.moveTo(cx, cy + half_h)
+            path.cubicTo(
+                cx - half_w,
+                cy + half_h * 0.4,
+                cx - half_w * 1.1,
+                cy - half_h * 0.35,
+                cx,
+                cy - half_h * 0.05,
+            )
+            path.cubicTo(
+                cx + half_w * 1.1,
+                cy - half_h * 0.35,
+                cx + half_w,
+                cy + half_h * 0.4,
+                cx,
+                cy + half_h,
+            )
+            painter.setPen(QPen(QColor(173, 115, 132, alpha), max(1, round(1.6 * scale))))
+            painter.setBrush(QColor(244, 164, 182, alpha))
+            painter.drawPath(path)
+
+        draw_heart(
+            base_x + round(offset_x * scale),
+            base_y + round(offset_y * scale),
+            max(4, round(size * scale)),
+            220,
+        )
+        draw_heart(
+            base_x + round(small_dx * scale),
+            base_y + round(small_dy * scale),
+            max(0, round(small_size * scale)),
+            190,
+        )
+        painter.restore()
+
     def _maybe_show_water_reminder(self) -> None:
         if self.water_reminder_active:
             return
@@ -1155,7 +1277,9 @@ class PetWindow(QWidget):
         if any(keyword in title for keyword in VIDEO_TITLE_KEYWORDS):
             return True
         if any(browser in process_name for browser in BROWSER_PROCESS_NAMES):
-            return any(keyword in title for keyword in VIDEO_TITLE_KEYWORDS)
+            return any(keyword in title for keyword in VIDEO_TITLE_KEYWORDS) or any(
+                keyword in title for keyword in BROWSER_LIVE_HINTS
+            )
         return False
 
     def _process_name_from_pid(self, pid: int) -> str:
@@ -1277,12 +1401,10 @@ class PetWindow(QWidget):
             painter.fillRect(6, 8, 6, 5, QColor("#8fd4ff"))
             painter.drawLine(13, 6, 15, 8)
         elif kind == "movie":
-            painter.setBrush(QColor("#ffe8ef"))
-            painter.drawRoundedRect(3, 4, 12, 9, 3, 3)
+            painter.setBrush(QColor("#fff6fb"))
+            painter.drawRoundedRect(3, 3, 12, 9, 2, 2)
             painter.setBrush(QColor("#9fd8ff"))
-            painter.drawRect(5, 6, 8, 5)
-            painter.drawLine(7, 14, 11, 14)
-            painter.drawLine(9, 13, 9, 16)
+            painter.drawRoundedRect(5, 5, 8, 5, 1, 1)
         elif kind == "sleep":
             painter.setBrush(QColor("#fff1c7"))
             moon = QPainterPath()
@@ -1295,15 +1417,16 @@ class PetWindow(QWidget):
             painter.drawPoint(14, 8)
             painter.drawPoint(11, 3)
         elif kind == "stand":
-            painter.setBrush(QColor("#ffe8ef"))
-            painter.drawRoundedRect(7, 8, 4, 5, 2, 2)
-            painter.drawLine(9, 13, 9, 16)
-            painter.drawLine(9, 13, 5, 10)
-            painter.drawLine(9, 13, 13, 10)
-            painter.drawLine(9, 16, 6, 18)
-            painter.drawLine(9, 16, 12, 18)
-            painter.drawArc(2, 1, 6, 6, 300 * 16, 120 * 16)
-            painter.drawArc(10, 1, 6, 6, 120 * 16, 120 * 16)
+            painter.setBrush(QColor("#f7adc0"))
+            painter.drawRoundedRect(8, 3, 5, 7, 2, 2)
+            painter.drawRoundedRect(5, 10, 9, 4, 2, 2)
+            painter.drawLine(9, 14, 9, 16)
+            painter.drawLine(10, 14, 10, 16)
+            painter.drawLine(11, 14, 11, 16)
+            painter.drawLine(10, 16, 6, 17)
+            painter.drawLine(10, 16, 14, 17)
+            painter.drawLine(10, 16, 8, 18)
+            painter.drawLine(10, 16, 12, 18)
 
         painter.end()
         return QIcon(pix)
@@ -1389,7 +1512,7 @@ class PetWindow(QWidget):
         movie_action.triggered.connect(self._trigger_movie_action)
         menu.addAction(movie_action)
 
-        sedentary_action = QAction("起来活动", self)
+        sedentary_action = QAction("伸懒腰", self)
         sedentary_action.setIcon(self._make_menu_icon("stand"))
         sedentary_action.triggered.connect(self._trigger_sedentary_action)
         menu.addAction(sedentary_action)
