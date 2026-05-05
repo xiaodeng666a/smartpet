@@ -15,3 +15,7 @@ dist/
 *.log
 Thumbs.db
 Desktop.ini
+
+assets/backups/
+assets/test_outputs/
+
