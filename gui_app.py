@@ -235,7 +235,7 @@ class TailBubbleLabel(QLabel):
         self.border = border
         self.setWordWrap(True)
         self.setTextFormat(Qt.PlainText)
-        self.setContentsMargins(12, 8, 12, 16)
+        self.setContentsMargins(10, 7, 10, 14)
         self.setStyleSheet("background:transparent; color:#5a2b42;")
 
     def sizeHint(self):  # noqa: N802
@@ -252,7 +252,7 @@ class TailBubbleLabel(QLabel):
 
         rect = self.rect().adjusted(1, 1, -1, -11)
         bubble = QPainterPath()
-        bubble.addRoundedRect(rect, 16, 16)
+        bubble.addRoundedRect(rect, 14, 14)
 
         tail = QPainterPath()
         tail.moveTo(rect.left() + 24, rect.bottom() - 2)
@@ -274,8 +274,8 @@ class TailBubbleReply(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 16)
-        layout.setSpacing(6)
+        layout.setContentsMargins(10, 7, 10, 14)
+        layout.setSpacing(5)
 
         self.label = QLabel("")
         self.label.setWordWrap(True)
@@ -352,10 +352,10 @@ class TailBubbleInput(QWidget):
     def __init__(self, placeholder: str, parent=None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setFixedHeight(62)
+        self.setFixedHeight(56)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 16)
+        layout.setContentsMargins(10, 7, 10, 14)
         layout.setSpacing(0)
 
         self.editor = QTextEdit()
@@ -377,7 +377,7 @@ class TailBubbleInput(QWidget):
 
         rect = self.rect().adjusted(1, 1, -1, -11)
         bubble = QPainterPath()
-        bubble.addRoundedRect(rect, 16, 16)
+        bubble.addRoundedRect(rect, 14, 14)
 
         tail = QPainterPath()
         tail.moveTo(rect.left() + 24, rect.bottom() - 2)
@@ -399,8 +399,8 @@ class BubbleChatWindow(QWidget):
         self.setWindowTitle("阿尼亚聊天框")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.resize(232, 88)
-        self.setMinimumHeight(88)
+        self.resize(216, 80)
+        self.setMinimumHeight(80)
         self.reply_restore_input = True
 
         self.reply_timer = QTimer(self)
@@ -413,12 +413,12 @@ class BubbleChatWindow(QWidget):
 
         self.input_shell = TailBubbleInput("和阿尼亚说点什么吧...")
         self.input_box = self.input_shell.editor
-        self.input_box.setFixedHeight(34)
+        self.input_box.setFixedHeight(30)
         self.input_box.installEventFilter(self)
         layout.addWidget(self.input_shell)
 
         self.reply_bubble = TailBubbleReply("#ffe5ee", "#f0cada")
-        self.reply_bubble.setMaximumWidth(196)
+        self.reply_bubble.setMaximumWidth(180)
         self.reply_bubble.hide()
         layout.addWidget(self.reply_bubble)
         self.reply_bubble.action_clicked.connect(self._handle_action_button)

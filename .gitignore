@@ -18,4 +18,10 @@ Desktop.ini
 
 assets/backups/
 assets/test_outputs/
+assets/build_pet_shadow_test.py
+assets/build_sedentary_sheet.py
+assets/clean_and_slice_anya_pet_sheet.py
+assets/extract_anya_dog_frames.py
+assets/slice_anya_pet_sheet.py
+test_langchain.py
 
