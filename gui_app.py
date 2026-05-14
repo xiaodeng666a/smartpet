@@ -1,9 +1,12 @@
 import sys
 import ctypes
 import random
+import time
 from pathlib import Path
 
+
 from src.agent.pet_agent import chat_once, key_loaded
+
 
 try:
     from PySide6.QtCore import QEvent, QPoint, QRect, QSize, QThread, QTimer, Qt, Signal
@@ -34,6 +37,7 @@ SLEEP_FRAMES_DIR = ASSET_DIR / "anya_sleep_frames"
 MOVIE_FRAMES_DIR = ASSET_DIR / "anya_movie_frames"
 SEDENTARY_FRAMES_DIR = ASSET_DIR / "anya_sedentary_frames"
 STATIC_IMAGE_PATH = ASSET_DIR / "anya_cutout.png"
+
 
 MANUAL_RUN_SEQUENCE_12 = [4, 5, 6, 7, 11, 10, 9, 8]
 FRAME_INTERVAL_DEFAULT = 84
@@ -76,6 +80,8 @@ IDLE_CHAT_INTERVAL_MIN_MS = 8 * 60 * 1000
 IDLE_CHAT_INTERVAL_MAX_MS = 15 * 60 * 1000
 MOVIE_FRAME_INTERVAL_MS = 210
 SCREEN_POLL_INTERVAL_MS = 2200
+SLEEP_IDLE_TRIGGER_MS = 3 * 60 * 1000
+SLEEP_WAKE_MOVE_DISTANCE = 8
 MOVIE_ENTER_STABLE_TICKS = 1
 MOVIE_EXIT_STABLE_TICKS = 1
 SLEEP_FRAME_INTERVAL_MS = 130
@@ -121,6 +127,7 @@ SEDENTARY_FRAME_OFFSETS = {
     4: (23, 0),
 }
 SEDENTARY_PLAY_SEQUENCE = [0, 1, 1, 2, 2, 3, 3, 3, 3, 4]
+
 
 TEXT_DARK = "#5a2b42"
 DEFAULT_SCALE_PERCENT = 32
@@ -215,10 +222,12 @@ class ChatWorker(QThread):
     finished_reply = Signal(str, str)
     failed = Signal(str)
 
+
     def __init__(self, history: list[tuple[str, str]], user_input: str) -> None:
         super().__init__()
         self.history = list(history)
         self.user_input = user_input
+
 
     def run(self) -> None:
         try:
@@ -238,11 +247,13 @@ class TailBubbleLabel(QLabel):
         self.setContentsMargins(10, 7, 10, 14)
         self.setStyleSheet("background:transparent; color:#5a2b42;")
 
+
     def sizeHint(self):  # noqa: N802
         hint = super().sizeHint()
         hint.setHeight(hint.height() + 10)
         hint.setWidth(hint.width() + 8)
         return hint
+
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -250,15 +261,18 @@ class TailBubbleLabel(QLabel):
         painter.setPen(QColor(self.border))
         painter.setBrush(QColor(self.fill))
 
+
         rect = self.rect().adjusted(1, 1, -1, -11)
         bubble = QPainterPath()
         bubble.addRoundedRect(rect, 14, 14)
+
 
         tail = QPainterPath()
         tail.moveTo(rect.left() + 24, rect.bottom() - 2)
         tail.lineTo(rect.left() + 10, rect.bottom() + 10)
         tail.lineTo(rect.left() + 34, rect.bottom() + 2)
         tail.closeSubpath()
+
 
         painter.drawPath(bubble.united(tail))
         super().paintEvent(event)
@@ -267,21 +281,25 @@ class TailBubbleLabel(QLabel):
 class TailBubbleReply(QWidget):
     action_clicked = Signal()
 
+
     def __init__(self, fill: str, border: str, parent=None) -> None:
         super().__init__(parent)
         self.fill = fill
         self.border = border
         self.setAttribute(Qt.WA_TranslucentBackground, True)
 
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 7, 10, 14)
         layout.setSpacing(5)
+
 
         self.label = QLabel("")
         self.label.setWordWrap(True)
         self.label.setTextFormat(Qt.PlainText)
         self.label.setStyleSheet("background:transparent; color:#5a2b42;")
         layout.addWidget(self.label)
+
 
         self.action_button = QPushButton("")
         self.action_button.hide()
@@ -304,11 +322,14 @@ class TailBubbleReply(QWidget):
         self.action_button.clicked.connect(self.action_clicked.emit)
         layout.addWidget(self.action_button, 0, Qt.AlignLeft)
 
+
     def setText(self, text: str) -> None:  # noqa: N802
         self.label.setText(text)
 
+
     def text(self) -> str:
         return self.label.text()
+
 
     def show_action_button(self, button_text: str, action_name: str) -> None:
         self.action_button.setProperty("action_name", action_name)
@@ -317,10 +338,12 @@ class TailBubbleReply(QWidget):
         self.action_button.show()
         self.updateGeometry()
 
+
     def hide_action_button(self) -> None:
         self.action_button.hide()
         self.action_button.setProperty("action_name", None)
         self.updateGeometry()
+
 
     def sizeHint(self):  # noqa: N802
         hint = super().sizeHint()
@@ -328,21 +351,25 @@ class TailBubbleReply(QWidget):
         hint.setWidth(hint.width() + 8)
         return hint
 
+
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QColor(self.border))
         painter.setBrush(QColor(self.fill))
 
+
         rect = self.rect().adjusted(1, 1, -1, -11)
         bubble = QPainterPath()
         bubble.addRoundedRect(rect, 16, 16)
+
 
         tail = QPainterPath()
         tail.moveTo(rect.left() + 24, rect.bottom() - 2)
         tail.lineTo(rect.left() + 10, rect.bottom() + 10)
         tail.lineTo(rect.left() + 34, rect.bottom() + 2)
         tail.closeSubpath()
+
 
         painter.drawPath(bubble.united(tail))
         super().paintEvent(event)
@@ -354,9 +381,11 @@ class TailBubbleInput(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setFixedHeight(56)
 
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 7, 10, 14)
         layout.setSpacing(0)
+
 
         self.editor = QTextEdit()
         self.editor.setPlaceholderText(placeholder)
@@ -369,21 +398,25 @@ class TailBubbleInput(QWidget):
         )
         layout.addWidget(self.editor)
 
+
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QColor("#f0cada"))
         painter.setBrush(QColor("#ffe5ee"))
 
+
         rect = self.rect().adjusted(1, 1, -1, -11)
         bubble = QPainterPath()
         bubble.addRoundedRect(rect, 14, 14)
+
 
         tail = QPainterPath()
         tail.moveTo(rect.left() + 24, rect.bottom() - 2)
         tail.lineTo(rect.left() + 10, rect.bottom() + 10)
         tail.lineTo(rect.left() + 34, rect.bottom() + 2)
         tail.closeSubpath()
+
 
         painter.drawPath(bubble.united(tail))
         super().paintEvent(event)
@@ -394,6 +427,7 @@ class BubbleChatWindow(QWidget):
     geometry_changed = Signal()
     action_clicked = Signal(str)
 
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("阿尼亚聊天框")
@@ -403,13 +437,16 @@ class BubbleChatWindow(QWidget):
         self.setMinimumHeight(80)
         self.reply_restore_input = True
 
+
         self.reply_timer = QTimer(self)
         self.reply_timer.setSingleShot(True)
         self.reply_timer.timeout.connect(self._handle_reply_timeout)
 
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
 
         self.input_shell = TailBubbleInput("和阿尼亚说点什么吧...")
         self.input_box = self.input_shell.editor
@@ -417,16 +454,20 @@ class BubbleChatWindow(QWidget):
         self.input_box.installEventFilter(self)
         layout.addWidget(self.input_shell)
 
+
         self.reply_bubble = TailBubbleReply("#ffe5ee", "#f0cada")
         self.reply_bubble.setMaximumWidth(180)
         self.reply_bubble.hide()
         layout.addWidget(self.reply_bubble)
         self.reply_bubble.action_clicked.connect(self._handle_action_button)
 
+
         self.send_button = QPushButton("发送")
         self.send_button.hide()
 
+
         self._refresh_window_height()
+
 
     def eventFilter(self, obj, event):  # noqa: N802
         if obj is self.input_box and event.type() == QEvent.KeyPress:
@@ -437,6 +478,7 @@ class BubbleChatWindow(QWidget):
                 return True
         return super().eventFilter(obj, event)
 
+
     def _emit_send(self) -> None:
         text = self.input_box.toPlainText().strip()
         if not text:
@@ -444,6 +486,7 @@ class BubbleChatWindow(QWidget):
         self.reply_timer.stop()
         self.input_box.clear()
         self.send_requested.emit(text)
+
 
     def _refresh_window_height(self) -> None:
         old_size = self.size()
@@ -458,6 +501,7 @@ class BubbleChatWindow(QWidget):
         if self.size() != old_size:
             self.geometry_changed.emit()
 
+
     def _handle_reply_timeout(self) -> None:
         if self.reply_restore_input:
             self.show_input_mode()
@@ -466,6 +510,7 @@ class BubbleChatWindow(QWidget):
         self.reply_bubble.hide_action_button()
         self._refresh_window_height()
         self.hide()
+
 
     def show_input_mode(self) -> None:
         self.reply_timer.stop()
@@ -480,6 +525,7 @@ class BubbleChatWindow(QWidget):
         self.activateWindow()
         self.input_box.setFocus()
 
+
     def begin_thinking(self) -> None:
         self.reply_timer.stop()
         self.reply_restore_input = True
@@ -488,6 +534,7 @@ class BubbleChatWindow(QWidget):
         self.reply_bubble.hide_action_button()
         self._refresh_window_height()
         self.hide()
+
 
     def show_reply_mode(self, content: str, restore_input: bool = True) -> None:
         self.reply_restore_input = restore_input
@@ -500,6 +547,7 @@ class BubbleChatWindow(QWidget):
         self.raise_()
         self.activateWindow()
         self.reply_timer.start(5000)
+
 
     def show_action_reply_mode(
         self,
@@ -520,8 +568,10 @@ class BubbleChatWindow(QWidget):
         self.raise_()
         self.activateWindow()
 
+
     def set_busy(self, busy: bool) -> None:
         self.input_box.setDisabled(busy)
+
 
     def _handle_action_button(self) -> None:
         action_name = self.reply_bubble.action_button.property("action_name")
@@ -535,6 +585,7 @@ class PetWindow(QWidget):
         self.setWindowTitle("阿尼亚桌宠")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+
 
         self.history: list[tuple[str, str]] = []
         self.drag_offset: QPoint | None = None
@@ -563,9 +614,13 @@ class PetWindow(QWidget):
         self.movie_detect_hits = 0
         self.movie_detect_misses = 0
         self.sleep_action_active = False
+        self.sleep_auto_mode = False
         self.sleep_frame_index = 0
         self.sleep_z_phase = 0
+        self.last_cursor_pos = QCursor.pos()
+        self.last_cursor_move_at = time.monotonic()
         self.idle_chat_enabled = True
+
 
         self.frames = self._load_frames()
         self.water_frames = self._load_optional_frames(WATER_FRAMES_DIR)
@@ -576,8 +631,10 @@ class PetWindow(QWidget):
         self.frame_index = 0
         self.play_sequence = self._build_play_sequence(len(self.frames))
 
+
         self._build_ui()
         self._fit_to_frame()
+
 
         self.chat_window = BubbleChatWindow()
         self.chat_window.send_requested.connect(self._send_message)
@@ -585,7 +642,9 @@ class PetWindow(QWidget):
         self.chat_window.action_clicked.connect(self._handle_chat_action)
         QApplication.instance().installEventFilter(self)
 
+
         self._start_timers()
+
 
         if not key_loaded():
             QMessageBox.warning(
@@ -594,10 +653,12 @@ class PetWindow(QWidget):
                 "还没有检测到可用的 API Key，聊天功能可能无法正常回复。",
             )
 
+
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
+
 
         self.pet_label = QLabel()
         self.pet_label.setAlignment(Qt.AlignCenter)
@@ -606,10 +667,12 @@ class PetWindow(QWidget):
         root.addWidget(self.pet_label)
         self._render_frame()
 
+
     def _fit_to_frame(self) -> None:
         pix = self.frames[0]
         width, height = self._scaled_dimensions(pix.width(), pix.height())
         self._set_display_size(width, height)
+
 
     def _set_display_size(self, width: int, height: int) -> None:
         if self.width() == width and self.height() == height:
@@ -628,9 +691,11 @@ class PetWindow(QWidget):
                 self._position_chat_window()
         self.resize_anchor_mode = "bottom"
 
+
     def _scaled_dimensions(self, width: int, height: int) -> tuple[int, int]:
         scale = self.scale_percent / 100.0
         return max(1, round(width * scale)), max(1, round(height * scale))
+
 
     def _scaled_pixmap(self, pixmap: QPixmap) -> QPixmap:
         width, height = self._scaled_dimensions(pixmap.width(), pixmap.height())
@@ -638,11 +703,14 @@ class PetWindow(QWidget):
             return pixmap
         return pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
+
     def _chat_window_visible(self) -> bool:
         return bool(self.chat_window and self.chat_window.isVisible())
 
+
     def _chat_input_focused(self) -> bool:
         return bool(self.chat_window and self.chat_window.input_box.hasFocus())
+
 
     def _load_frames(self) -> list[QPixmap]:
         for frame_dir in (PET_FRAMES_DIR, DOG_FRAMES_DIR):
@@ -657,10 +725,12 @@ class PetWindow(QWidget):
             if frames:
                 return frames
 
+
         if STATIC_IMAGE_PATH.exists():
             pix = QPixmap(str(STATIC_IMAGE_PATH))
             if not pix.isNull():
                 return [pix]
+
 
         fallback = QPixmap(220, 280)
         fallback.fill(Qt.transparent)
@@ -675,6 +745,7 @@ class PetWindow(QWidget):
         painter.end()
         return [fallback]
 
+
     def _load_optional_frames(self, frame_dir: Path) -> list[QPixmap]:
         frame_files = sorted(frame_dir.glob("frame_*.png"))
         frames: list[QPixmap] = []
@@ -684,55 +755,68 @@ class PetWindow(QWidget):
                 frames.append(pix)
         return frames
 
+
     def _start_timers(self) -> None:
         self.frame_timer = QTimer(self)
         self.frame_timer.timeout.connect(self._tick_frames)
         self.frame_timer.start(FRAME_INTERVAL_DEFAULT)
 
+
         self.chase_timer = QTimer(self)
         self.chase_timer.timeout.connect(self._tick_chase)
         self.chase_timer.start(CHASE_INTERVAL_MS)
+
 
         self.hotkey_timer = QTimer(self)
         self.hotkey_timer.timeout.connect(self._poll_hotkeys)
         self.hotkey_timer.start(30)
 
+
         self.reminder_timer = QTimer(self)
         self.reminder_timer.timeout.connect(self._maybe_show_water_reminder)
         self.reminder_timer.start(REMINDER_INTERVAL_MS)
+
 
         self.reminder_retry_timer = QTimer(self)
         self.reminder_retry_timer.setSingleShot(True)
         self.reminder_retry_timer.timeout.connect(self._maybe_show_water_reminder)
 
+
         self.sedentary_reminder_timer = QTimer(self)
         self.sedentary_reminder_timer.timeout.connect(self._maybe_show_sedentary_reminder)
         self.sedentary_reminder_timer.start(SEDENTARY_REMINDER_INTERVAL_MS)
 
+
         self.sedentary_retry_timer = QTimer(self)
         self.sedentary_retry_timer.setSingleShot(True)
         self.sedentary_retry_timer.timeout.connect(self._maybe_show_sedentary_reminder)
+
 
         self.idle_chat_timer = QTimer(self)
         self.idle_chat_timer.setSingleShot(True)
         self.idle_chat_timer.timeout.connect(self._maybe_show_idle_chat)
         self._schedule_idle_chat()
 
+
         self.screen_state_timer = QTimer(self)
         self.screen_state_timer.timeout.connect(self._poll_screen_activity)
         self.screen_state_timer.start(SCREEN_POLL_INTERVAL_MS)
+
 
         self.water_pose_timer = QTimer(self)
         self.water_pose_timer.setSingleShot(True)
         self.water_pose_timer.timeout.connect(self._finish_water_animation)
 
+
         self.sedentary_pose_timer = QTimer(self)
         self.sedentary_pose_timer.setSingleShot(True)
         self.sedentary_pose_timer.timeout.connect(self._finish_sedentary_animation)
 
+
         self.sleep_pose_timer = QTimer(self)
         self.sleep_pose_timer.setSingleShot(True)
         self.sleep_pose_timer.timeout.connect(self._finish_sleep_animation)
+
 
     def _build_play_sequence(self, frame_count: int) -> list[int]:
         if frame_count <= 1:
@@ -746,6 +830,7 @@ class PetWindow(QWidget):
             seq = [i for i in MANUAL_RUN_SEQUENCE_12 if i < frame_count]
             return seq if seq else list(range(frame_count))
         return list(range(frame_count))
+
 
     def _render_frame(self) -> None:
         if self.sleep_action_active and self.sleep_frames:
@@ -780,6 +865,7 @@ class PetWindow(QWidget):
             elif len(self.frames) == 10:
                 frame_offsets = FRAME_OFFSETS_10
 
+
         dx = 0
         dy = 0
         if not self.water_reminder_active and frame_to_draw in frame_offsets:
@@ -788,11 +874,13 @@ class PetWindow(QWidget):
             dx = round(raw_dx * scale)
             dy = round(raw_dy * scale)
 
+
         self._set_display_size(source_frame.width(), source_frame.height())
         canvas = QPixmap(self.pet_label.width(), self.pet_label.height())
         canvas.fill(Qt.transparent)
         painter = QPainter(canvas)
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
 
         if self.facing_right:
             mirrored = source_frame.transformed(QTransform().scale(-1, 1), Qt.SmoothTransformation)
@@ -803,6 +891,7 @@ class PetWindow(QWidget):
             painter.drawPixmap(dx, dy, source_frame)
             draw_x = dx
             draw_width = source_frame.width()
+
 
         if (
             self.sleep_action_active
@@ -825,8 +914,10 @@ class PetWindow(QWidget):
                 min(self.sedentary_frame_index, len(SEDENTARY_PLAY_SEQUENCE) - 1),
             )
 
+
         painter.end()
         self.pet_label.setPixmap(canvas)
+
 
     def _tick_frames(self) -> None:
         if self.sleep_action_active:
@@ -842,15 +933,28 @@ class PetWindow(QWidget):
             self._render_frame()
             return
 
+
         if self.sedentary_reminder_active:
             if not self.sedentary_frames:
                 return
-            if self.sedentary_frame_index < len(SEDENTARY_PLAY_SEQUENCE) - 1:
+
+
+            if self.sedentary_ack_pending:
+                self.sedentary_frame_index = (
+                    self.sedentary_frame_index + 1
+                ) % len(SEDENTARY_PLAY_SEQUENCE)
+            elif self.sedentary_frame_index < len(SEDENTARY_PLAY_SEQUENCE) - 1:
                 self.sedentary_frame_index += 1
-            elif not self.sedentary_ack_pending and not self.sedentary_pose_timer.isActive():
+            elif (
+                not self.sedentary_ack_pending
+                and not self.sedentary_pose_timer.isActive()
+            ):
                 self.sedentary_pose_timer.start(SEDENTARY_FINAL_HOLD_MS)
+
+
             self._render_frame()
             return
+
 
         if self.water_reminder_active:
             if not self.water_frames:
@@ -864,6 +968,7 @@ class PetWindow(QWidget):
             self._render_frame()
             return
 
+
         if self.movie_action_active:
             if not self.movie_frames:
                 return
@@ -871,6 +976,7 @@ class PetWindow(QWidget):
             self._render_frame()
             self.frame_timer.setInterval(MOVIE_FRAME_INTERVAL_MS)
             return
+
 
         if len(self.frames) <= 1:
             return
@@ -886,6 +992,7 @@ class PetWindow(QWidget):
                 FRAME_INTERVALS_10.get(self.current_frame, FRAME_INTERVAL_DEFAULT)
             )
 
+
     def _restart_animation(self) -> None:
         self._clear_special_actions()
         self.frame_index = 0
@@ -893,8 +1000,10 @@ class PetWindow(QWidget):
         self.frame_timer.setInterval(FRAME_INTERVAL_DEFAULT)
         self._render_frame()
 
+
     def _toggle_chase(self) -> None:
         self.chase_enabled = not self.chase_enabled
+
 
     def _show_movie_animation(self, manual_override: bool = False) -> None:
         if not self.movie_frames:
@@ -907,6 +1016,7 @@ class PetWindow(QWidget):
         self.frame_timer.setInterval(MOVIE_FRAME_INTERVAL_MS)
         self._render_frame()
 
+
     def _finish_movie_animation(self) -> None:
         self.movie_action_active = False
         self.movie_frame_index = 0
@@ -915,6 +1025,7 @@ class PetWindow(QWidget):
         self.movie_detect_misses = 0
         self.frame_timer.setInterval(FRAME_INTERVAL_DEFAULT)
         self._render_frame()
+
 
     def _clear_special_actions(self) -> None:
         self.water_pose_timer.stop()
@@ -937,6 +1048,7 @@ class PetWindow(QWidget):
         self.sleep_frame_index = 0
         self.sleep_z_phase = 0
 
+
     def _show_water_animation(self, *, require_ack: bool) -> None:
         if not self.water_frames:
             return
@@ -947,6 +1059,7 @@ class PetWindow(QWidget):
         self.frame_timer.setInterval(WATER_FRAME_INTERVAL_MS)
         self._render_frame()
 
+
     def _finish_water_animation(self) -> None:
         self.water_reminder_active = False
         self.water_ack_pending = False
@@ -956,15 +1069,18 @@ class PetWindow(QWidget):
         self._render_frame()
         self._schedule_idle_chat()
 
+
     def _show_sedentary_animation(self, *, require_ack: bool) -> None:
         if not self.sedentary_frames:
             return
+        self.sedentary_pose_timer.stop()
         self.sedentary_reminder_active = True
         self.sedentary_ack_pending = require_ack
         self.sedentary_manual_mode = not require_ack
         self.sedentary_frame_index = 0
         self.frame_timer.setInterval(SEDENTARY_FRAME_INTERVAL_MS)
         self._render_frame()
+
 
     def _finish_sedentary_animation(self) -> None:
         self.sedentary_pose_timer.stop()
@@ -976,12 +1092,14 @@ class PetWindow(QWidget):
         self._render_frame()
         self._schedule_idle_chat()
 
+
     def _schedule_idle_chat(self) -> None:
         if not self.idle_chat_enabled:
             return
         self.idle_chat_timer.start(
             random.randint(IDLE_CHAT_INTERVAL_MIN_MS, IDLE_CHAT_INTERVAL_MAX_MS)
         )
+
 
     def _maybe_show_idle_chat(self) -> None:
         if (
@@ -998,13 +1116,16 @@ class PetWindow(QWidget):
             self._schedule_idle_chat()
             return
 
+
         if not self.chat_window:
             self._schedule_idle_chat()
             return
 
+
         self.chat_window.show_reply_mode(random.choice(IDLE_CHAT_LINES), restore_input=False)
         self._position_chat_window()
         self._schedule_idle_chat()
+
 
     def _handle_chat_action(self, action_name: str) -> None:
         if action_name == "water_ack":
@@ -1012,11 +1133,13 @@ class PetWindow(QWidget):
         elif action_name == "sedentary_ack":
             self._acknowledge_sedentary_reminder()
 
+
     def _acknowledge_water_reminder(self) -> None:
         if not self.water_reminder_active or not self.water_ack_pending:
             return
         self.chat_window.hide()
         self._finish_water_animation()
+
 
     def _activate_water_reminder(self, show_prompt: bool = True) -> None:
         self.reminder_retry_timer.stop()
@@ -1031,11 +1154,13 @@ class PetWindow(QWidget):
             )
             self._position_chat_window()
 
+
     def _acknowledge_sedentary_reminder(self) -> None:
         if not self.sedentary_reminder_active or not self.sedentary_ack_pending:
             return
         self.chat_window.hide()
         self._finish_sedentary_animation()
+
 
     def _activate_sedentary_reminder(self, show_prompt: bool = True) -> None:
         self.sedentary_retry_timer.stop()
@@ -1050,31 +1175,39 @@ class PetWindow(QWidget):
             )
             self._position_chat_window()
 
-    def _show_sleep_animation(self) -> None:
+
+    def _show_sleep_animation(self, *, auto_mode: bool = False) -> None:
         if not self.sleep_frames:
             return
         self.sleep_pose_timer.stop()
         self.sleep_action_active = True
+        self.sleep_auto_mode = auto_mode
         self.sleep_frame_index = len(self.sleep_frames) - 1
         self.sleep_z_phase = 0
         self.frame_timer.setInterval(SLEEP_Z_INTERVAL_MS)
         self._render_frame()
 
+
     def _finish_sleep_animation(self) -> None:
         self.sleep_pose_timer.stop()
         self.sleep_action_active = False
+        self.sleep_auto_mode = False
         self.sleep_frame_index = 0
         self.sleep_z_phase = 0
         self.frame_timer.setInterval(FRAME_INTERVAL_DEFAULT)
+        self._reset_cursor_idle_timer()
         self._render_frame()
+
 
     def _prepare_sleep_final_frame(self, source_frame: QPixmap) -> QPixmap:
         composed = source_frame.copy()
         scale = self.scale_percent / 100.0
 
+
         breath_amount = round(SLEEP_BREATH_PHASES[self.sleep_z_phase] * scale)
         if breath_amount <= 0:
             return composed
+
 
         patch_x, patch_y, patch_w, patch_h = SLEEP_BREATH_PATCH_RECT
         src_rect = QRect(
@@ -1101,6 +1234,7 @@ class PetWindow(QWidget):
             painter.end()
         return composed
 
+
     def _draw_sleep_z_overlay(
         self,
         painter: QPainter,
@@ -1120,13 +1254,16 @@ class PetWindow(QWidget):
             metrics = painter.fontMetrics()
             text_width = metrics.horizontalAdvance("Z")
 
+
             if mirrored:
                 text_x = draw_x + frame_width - scaled_x - text_width
             else:
                 text_x = draw_x + scaled_x
 
+
             painter.setPen(z_color)
             painter.drawText(text_x, draw_y + scaled_y + metrics.ascent(), "Z")
+
 
     def _draw_sedentary_heart_overlay(
         self,
@@ -1144,12 +1281,15 @@ class PetWindow(QWidget):
         if size <= 0 and small_size <= 0:
             return
 
+
         scale = self.scale_percent / 100.0
         base_x = draw_x + round(94 * scale)
         base_y = draw_y + round(122 * scale)
 
+
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing)
+
 
         def draw_heart(cx: int, cy: int, heart_size: int, alpha: int) -> None:
             if heart_size <= 0:
@@ -1178,6 +1318,7 @@ class PetWindow(QWidget):
             painter.setBrush(QColor(244, 164, 182, alpha))
             painter.drawPath(path)
 
+
         draw_heart(
             base_x + round(offset_x * scale),
             base_y + round(offset_y * scale),
@@ -1192,10 +1333,24 @@ class PetWindow(QWidget):
         )
         painter.restore()
 
+
     def _maybe_show_water_reminder(self) -> None:
         if self.water_reminder_active:
             return
+        if (
+            self.is_busy
+            or self.menu_open
+            or self.drag_offset
+            or self.sleep_action_active
+            or self.movie_action_active
+            or self.sedentary_reminder_active
+            or self._chat_window_visible()
+            or self._chat_input_focused()
+        ):
+            self.reminder_retry_timer.start(REMINDER_RETRY_MS)
+            return
         self._activate_water_reminder(show_prompt=True)
+
 
     def _maybe_show_sedentary_reminder(self) -> None:
         if self.sedentary_reminder_active or not self.sedentary_frames:
@@ -1214,27 +1369,63 @@ class PetWindow(QWidget):
             return
         self._activate_sedentary_reminder(show_prompt=True)
 
+
     def _poll_hotkeys(self) -> None:
         try:
             key_down = bool(ctypes.windll.user32.GetAsyncKeyState(VK_F5) & 0x8000)
         except Exception:
             return
 
+
         if key_down and not self.f5_was_down:
             if not self._chat_input_focused():
                 self._toggle_chase()
         self.f5_was_down = key_down
 
+
+    def _reset_cursor_idle_timer(self) -> None:
+        self.last_cursor_pos = QCursor.pos()
+        self.last_cursor_move_at = time.monotonic()
+
+
+    def _update_cursor_idle_state(self) -> bool:
+        cursor_pos = QCursor.pos()
+        moved = (
+            abs(cursor_pos.x() - self.last_cursor_pos.x()) >= SLEEP_WAKE_MOVE_DISTANCE
+            or abs(cursor_pos.y() - self.last_cursor_pos.y()) >= SLEEP_WAKE_MOVE_DISTANCE
+        )
+
+
+        if moved:
+            self._reset_cursor_idle_timer()
+
+
+            if self.sleep_action_active and self.sleep_auto_mode:
+                self._finish_sleep_animation()
+
+
+        return moved
+
+
     def _poll_screen_activity(self) -> None:
+        self._update_cursor_idle_state()
+
+
         if (
             self.movie_manual_override
-            or self.sleep_action_active
             or self.water_reminder_active
             or self.sedentary_reminder_active
         ):
             return
+
+
+        if self.sleep_action_active:
+            return
+
+
         detected = self._foreground_looks_like_video()
         if detected:
+            self._reset_cursor_idle_timer()
             self.movie_detect_hits += 1
             self.movie_detect_misses = 0
             if (
@@ -1244,6 +1435,7 @@ class PetWindow(QWidget):
                 self._show_movie_animation(manual_override=False)
             return
 
+
         self.movie_detect_misses += 1
         self.movie_detect_hits = 0
         if (
@@ -1252,6 +1444,20 @@ class PetWindow(QWidget):
         ):
             self._finish_movie_animation()
 
+
+        if (
+            not self.is_busy
+            and not self.menu_open
+            and not self.drag_offset
+            and not self._chat_window_visible()
+            and not self._chat_input_focused()
+            and not self.movie_action_active
+        ):
+            idle_ms = (time.monotonic() - self.last_cursor_move_at) * 1000
+            if idle_ms >= SLEEP_IDLE_TRIGGER_MS:
+                self._show_sleep_animation(auto_mode=True)
+
+
     def _foreground_looks_like_video(self) -> bool:
         try:
             user32 = ctypes.windll.user32
@@ -1259,16 +1465,19 @@ class PetWindow(QWidget):
             if not hwnd:
                 return False
 
+
             title_length = user32.GetWindowTextLengthW(hwnd)
             title_buffer = ctypes.create_unicode_buffer(title_length + 1)
             user32.GetWindowTextW(hwnd, title_buffer, title_length + 1)
             title = title_buffer.value.strip().lower()
+
 
             pid = ctypes.c_ulong()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             process_name = self._process_name_from_pid(pid.value).lower()
         except Exception:
             return False
+
 
         if not title and not process_name:
             return False
@@ -1281,6 +1490,7 @@ class PetWindow(QWidget):
                 keyword in title for keyword in BROWSER_LIVE_HINTS
             )
         return False
+
 
     def _process_name_from_pid(self, pid: int) -> str:
         if not pid:
@@ -1308,11 +1518,13 @@ class PetWindow(QWidget):
         finally:
             ctypes.windll.kernel32.CloseHandle(handle)
 
+
     def _tick_chase(self) -> None:
         if self.sleep_action_active or self.sedentary_reminder_active:
             return
         if not self.chase_enabled or self.drag_offset or self.menu_open:
             return
+
 
         cursor_pos = QCursor.pos()
         target_x = cursor_pos.x() + CURSOR_TARGET_OFFSET_X
@@ -1330,6 +1542,7 @@ class PetWindow(QWidget):
         if distance_sq <= CHASE_STOP_DISTANCE * CHASE_STOP_DISTANCE:
             return
 
+
         distance = distance_sq ** 0.5
         step = max(CHASE_STEP_MIN, min(CHASE_STEP_MAX, int(distance * 0.18)))
         move_x = round(dx / distance * step)
@@ -1337,6 +1550,7 @@ class PetWindow(QWidget):
         self.move(self.x() + move_x, self.y() + move_y)
         if self._chat_window_visible():
             self._position_chat_window()
+
 
     def _toggle_chat(self) -> None:
         if not self.chat_window:
@@ -1347,6 +1561,7 @@ class PetWindow(QWidget):
         if not self.is_busy:
             self.chat_window.show_input_mode()
         self._position_chat_window()
+
 
     def _position_chat_window(self) -> None:
         if not self.chat_window:
@@ -1360,6 +1575,7 @@ class PetWindow(QWidget):
         ) + CHAT_VERTICAL_NUDGE_PX
         self.chat_window.move(x, y)
 
+
     def _make_menu_icon(self, kind: str) -> QIcon:
         pix = QPixmap(18, 18)
         pix.fill(Qt.transparent)
@@ -1370,6 +1586,7 @@ class PetWindow(QWidget):
         stroke.setCapStyle(Qt.RoundCap)
         stroke.setJoinStyle(Qt.RoundJoin)
         painter.setPen(stroke)
+
 
         if kind == "dog":
             painter.setBrush(QColor("#fffdf8"))
@@ -1385,6 +1602,7 @@ class PetWindow(QWidget):
             right_ear.closeSubpath()
             painter.drawPath(left_ear)
             painter.drawPath(right_ear)
+
 
             painter.drawRoundedRect(4, 4, 10, 10, 5, 5)
             painter.setPen(QPen(QColor("#7b4b62"), 1.0))
@@ -1428,8 +1646,10 @@ class PetWindow(QWidget):
             painter.drawLine(10, 16, 8, 18)
             painter.drawLine(10, 16, 12, 18)
 
+
         painter.end()
         return QIcon(pix)
+
 
     def _trigger_water_action(self) -> None:
         if self.chat_window:
@@ -1437,15 +1657,19 @@ class PetWindow(QWidget):
         self._clear_special_actions()
         self._show_water_animation(require_ack=False)
 
+
     def _trigger_movie_action(self) -> None:
         self._clear_special_actions()
         self._show_movie_animation(manual_override=True)
+
 
     def _trigger_sleep_action(self) -> None:
         if self.movie_action_active:
             self.resize_anchor_mode = "top"
         self._clear_special_actions()
-        self._show_sleep_animation()
+        self._reset_cursor_idle_timer()
+        self._show_sleep_animation(auto_mode=False)
+
 
     def _trigger_sedentary_action(self) -> None:
         if self.chat_window:
@@ -1453,6 +1677,7 @@ class PetWindow(QWidget):
         self.sedentary_retry_timer.stop()
         self._clear_special_actions()
         self._show_sedentary_animation(require_ack=False)
+
 
     def _show_menu(self, global_pos) -> None:
         self.menu_open = True
@@ -1488,34 +1713,41 @@ class PetWindow(QWidget):
             """
         )
 
+
         open_chat = QAction("聊天", self)
         open_chat.triggered.connect(self._open_chat_from_menu)
         menu.addAction(open_chat)
+
 
         hide_chat = QAction("收起聊天", self)
         hide_chat.triggered.connect(self.chat_window.hide)
         menu.addAction(hide_chat)
         menu.addSeparator()
 
+
         replay = QAction("趴狗狗", self)
         replay.setIcon(self._make_menu_icon("dog"))
         replay.triggered.connect(self._restart_animation)
         menu.addAction(replay)
+
 
         water_action = QAction("喝水", self)
         water_action.setIcon(self._make_menu_icon("water"))
         water_action.triggered.connect(self._trigger_water_action)
         menu.addAction(water_action)
 
+
         movie_action = QAction("看电影", self)
         movie_action.setIcon(self._make_menu_icon("movie"))
         movie_action.triggered.connect(self._trigger_movie_action)
         menu.addAction(movie_action)
 
+
         sedentary_action = QAction("伸懒腰", self)
         sedentary_action.setIcon(self._make_menu_icon("stand"))
         sedentary_action.triggered.connect(self._trigger_sedentary_action)
         menu.addAction(sedentary_action)
+
 
         sleep_action = QAction("睡觉", self)
         sleep_action.setIcon(self._make_menu_icon("sleep"))
@@ -1523,29 +1755,35 @@ class PetWindow(QWidget):
         menu.addAction(sleep_action)
         menu.addSeparator()
 
+
         quit_action = QAction("退出", self)
         quit_action.triggered.connect(QApplication.instance().quit)
         menu.addAction(quit_action)
         menu.exec(global_pos)
         self.menu_open = False
 
+
     def _open_chat_from_menu(self) -> None:
         if not self.is_busy:
             self.chat_window.show_input_mode()
         self._position_chat_window()
 
+
     def _send_message(self, user_input: str) -> None:
         if self.is_busy:
             return
+
 
         self.chat_window.begin_thinking()
         self.chat_window.set_busy(True)
         self.is_busy = True
 
+
         self.chat_worker = ChatWorker(self.history, user_input)
         self.chat_worker.finished_reply.connect(self._handle_reply)
         self.chat_worker.failed.connect(self._handle_error)
         self.chat_worker.start()
+
 
     def _handle_reply(self, user_input: str, reply: str) -> None:
         self.history.append(("human", user_input))
@@ -1555,11 +1793,13 @@ class PetWindow(QWidget):
         self.chat_window.set_busy(False)
         self.is_busy = False
 
+
     def _handle_error(self, message: str) -> None:
         self.chat_window.show_reply_mode(message)
         self._position_chat_window()
         self.chat_window.set_busy(False)
         self.is_busy = False
+
 
     def eventFilter(self, obj, event):  # noqa: N802
         if obj is self.pet_label:
@@ -1568,6 +1808,7 @@ class PetWindow(QWidget):
                 self.press_global_pos = event.globalPosition().toPoint()
                 self.drag_started = False
                 return True
+
 
             if event.type() == QEvent.MouseMove and self.drag_offset and event.buttons() & Qt.LeftButton:
                 current = event.globalPosition().toPoint()
@@ -1578,6 +1819,7 @@ class PetWindow(QWidget):
                     self._position_chat_window()
                 return True
 
+
             if event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
                 was_dragging = self.drag_started
                 self.drag_offset = None
@@ -1587,13 +1829,16 @@ class PetWindow(QWidget):
                     self._toggle_chat()
                 return True
 
+
             if event.type() == QEvent.MouseButtonDblClick and event.button() == Qt.LeftButton:
                 self._restart_animation()
                 return True
 
+
             if event.type() == QEvent.ContextMenu:
                 self._show_menu(event.globalPos())
                 return True
+
 
         return super().eventFilter(obj, event)
 
@@ -1608,3 +1853,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
