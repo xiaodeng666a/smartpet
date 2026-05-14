@@ -945,7 +945,10 @@ class PetWindow(QWidget):
                 ) % len(SEDENTARY_PLAY_SEQUENCE)
             elif self.sedentary_frame_index < len(SEDENTARY_PLAY_SEQUENCE) - 1:
                 self.sedentary_frame_index += 1
-            elif not self.sedentary_pose_timer.isActive():
+            elif (
+                not self.sedentary_ack_pending
+                and not self.sedentary_pose_timer.isActive()
+            ):
                 self.sedentary_pose_timer.start(SEDENTARY_FINAL_HOLD_MS)
 
 
