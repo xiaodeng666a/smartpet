@@ -1425,6 +1425,7 @@ class PetWindow(QWidget):
 
         detected = self._foreground_looks_like_video()
         if detected:
+            self._reset_cursor_idle_timer()
             self.movie_detect_hits += 1
             self.movie_detect_misses = 0
             if (
