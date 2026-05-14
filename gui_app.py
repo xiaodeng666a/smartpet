@@ -1,6 +1,7 @@
-import sys
+﻿import sys
 import ctypes
 import random
+import time
 from pathlib import Path
 
 from src.agent.pet_agent import chat_once, key_loaded
@@ -76,6 +77,8 @@ IDLE_CHAT_INTERVAL_MIN_MS = 8 * 60 * 1000
 IDLE_CHAT_INTERVAL_MAX_MS = 15 * 60 * 1000
 MOVIE_FRAME_INTERVAL_MS = 210
 SCREEN_POLL_INTERVAL_MS = 2200
+SLEEP_IDLE_TRIGGER_MS = 3 * 60 * 1000
+SLEEP_WAKE_MOVE_DISTANCE = 8
 MOVIE_ENTER_STABLE_TICKS = 1
 MOVIE_EXIT_STABLE_TICKS = 1
 SLEEP_FRAME_INTERVAL_MS = 130
@@ -563,8 +566,11 @@ class PetWindow(QWidget):
         self.movie_detect_hits = 0
         self.movie_detect_misses = 0
         self.sleep_action_active = False
+        self.sleep_auto_mode = False
         self.sleep_frame_index = 0
         self.sleep_z_phase = 0
+        self.last_cursor_pos = QCursor.pos()
+        self.last_cursor_move_at = time.monotonic()
         self.idle_chat_enabled = True
 
         self.frames = self._load_frames()
@@ -845,12 +851,19 @@ class PetWindow(QWidget):
         if self.sedentary_reminder_active:
             if not self.sedentary_frames:
                 return
-            if self.sedentary_frame_index < len(SEDENTARY_PLAY_SEQUENCE) - 1:
+
+            if self.sedentary_ack_pending:
+                self.sedentary_frame_index = (
+                    self.sedentary_frame_index + 1
+                ) % len(SEDENTARY_PLAY_SEQUENCE)
+            elif self.sedentary_frame_index < len(SEDENTARY_PLAY_SEQUENCE) - 1:
                 self.sedentary_frame_index += 1
-            elif not self.sedentary_ack_pending and not self.sedentary_pose_timer.isActive():
+            elif not self.sedentary_pose_timer.isActive():
                 self.sedentary_pose_timer.start(SEDENTARY_FINAL_HOLD_MS)
+
             self._render_frame()
             return
+
 
         if self.water_reminder_active:
             if not self.water_frames:
@@ -1050,11 +1063,12 @@ class PetWindow(QWidget):
             )
             self._position_chat_window()
 
-    def _show_sleep_animation(self) -> None:
+    def _show_sleep_animation(self, *, auto_mode: bool = False) -> None:
         if not self.sleep_frames:
             return
         self.sleep_pose_timer.stop()
         self.sleep_action_active = True
+        self.sleep_auto_mode = auto_mode
         self.sleep_frame_index = len(self.sleep_frames) - 1
         self.sleep_z_phase = 0
         self.frame_timer.setInterval(SLEEP_Z_INTERVAL_MS)
@@ -1063,6 +1077,7 @@ class PetWindow(QWidget):
     def _finish_sleep_animation(self) -> None:
         self.sleep_pose_timer.stop()
         self.sleep_action_active = False
+        self.sleep_auto_mode = False
         self.sleep_frame_index = 0
         self.sleep_z_phase = 0
         self.frame_timer.setInterval(FRAME_INTERVAL_DEFAULT)
@@ -1225,14 +1240,35 @@ class PetWindow(QWidget):
                 self._toggle_chase()
         self.f5_was_down = key_down
 
+    def _update_cursor_idle_state(self) -> bool:
+        cursor_pos = QCursor.pos()
+        moved = (
+            abs(cursor_pos.x() - self.last_cursor_pos.x()) >= SLEEP_WAKE_MOVE_DISTANCE
+            or abs(cursor_pos.y() - self.last_cursor_pos.y()) >= SLEEP_WAKE_MOVE_DISTANCE
+        )
+
+        if moved:
+            self.last_cursor_pos = cursor_pos
+            self.last_cursor_move_at = time.monotonic()
+
+            if self.sleep_action_active and self.sleep_auto_mode:
+                self._finish_sleep_animation()
+
+        return moved
+
     def _poll_screen_activity(self) -> None:
+        self._update_cursor_idle_state()
+
         if (
             self.movie_manual_override
-            or self.sleep_action_active
             or self.water_reminder_active
             or self.sedentary_reminder_active
         ):
             return
+
+        if self.sleep_action_active:
+            return
+
         detected = self._foreground_looks_like_video()
         if detected:
             self.movie_detect_hits += 1
@@ -1251,6 +1287,18 @@ class PetWindow(QWidget):
             and self.movie_detect_misses >= MOVIE_EXIT_STABLE_TICKS
         ):
             self._finish_movie_animation()
+
+        if (
+            not self.is_busy
+            and not self.menu_open
+            and not self.drag_offset
+            and not self._chat_window_visible()
+            and not self._chat_input_focused()
+            and not self.movie_action_active
+        ):
+            idle_ms = (time.monotonic() - self.last_cursor_move_at) * 1000
+            if idle_ms >= SLEEP_IDLE_TRIGGER_MS:
+                self._show_sleep_animation(auto_mode=True)
 
     def _foreground_looks_like_video(self) -> bool:
         try:
@@ -1445,7 +1493,7 @@ class PetWindow(QWidget):
         if self.movie_action_active:
             self.resize_anchor_mode = "top"
         self._clear_special_actions()
-        self._show_sleep_animation()
+        self._show_sleep_animation(auto_mode=False)
 
     def _trigger_sedentary_action(self) -> None:
         if self.chat_window:
@@ -1608,3 +1656,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
